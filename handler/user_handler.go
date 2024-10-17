@@ -1,10 +1,11 @@
 package handler
 
 import (
+	"Dandelion/db/model"
 	db "Dandelion/db/service"
 	"Dandelion/token"
 	"Dandelion/utils"
-	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -54,7 +55,7 @@ func (h *Handler) createUser(ctx *gin.Context) {
 	}
 	// 判断用户名是否存在
 	if i := h.Queries.ExistsUser(ctx, req.Username, req.Email); i > 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"message": "用户名已存在"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "用户名或邮箱已存在"})
 		return
 	}
 	// 判断昵称是否存在
@@ -112,9 +113,7 @@ func (h *Handler) login(ctx *gin.Context) {
 	// 判断用户是否存在
 	user, err := h.Queries.GetUser(ctx, req.Username)
 	if user.ID == 0 {
-		// ctx.JSON(http.StatusBadRequest, gin.H{"message": "用户名不存存", "error": err.Error()})
-		// ctx.JSON(http.StatusBadRequest, gin.H{"message": "用户名不存存"})
-		Error(ctx, http.StatusUnauthorized, "用户名不存在")
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "用户名不存存"})
 		return
 	}
 	// 校验密码
@@ -123,11 +122,42 @@ func (h *Handler) login(ctx *gin.Context) {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
+
+	isLoginExp := false
+
+	// 获取登录Ip
+	ip := ctx.ClientIP()
+
+	// 查询最新登录日志
+	userLoginLog := h.Queries.GetLastLoginLog(ctx, user.ID)
+
+	// TODO: 存在问题, 后续需要更改
+	// 判断是否登录异常
+	if userLoginLog != nil && ip != userLoginLog.Ip {
+		// 更新登录异常
+		_ = h.Queries.UpdateLastLoginLog(ctx, user.ID)
+		isLoginExp = true
+	}
+
 	// 生成Token
 	tokenStr, err := h.Token.CreateToken(user.Username, h.Conf.Token.AccessTokenDuration)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	region, _ := utils.GetRegion(ip)
+
+	loginLog := model.LoginLog{
+		UserId:     user.ID,
+		Ip:         ip,
+		IpAddr:     region,
+		IsLoginExp: isLoginExp,
+		LoginTime:  time.Now(),
+	}
+	err = h.Queries.AddLoginLog(ctx, &loginLog)
+	if err != nil {
+		log.Printf("Login log adding Error, Err:[%s]\n", err.Error())
 	}
 
 	// 返回结果
@@ -177,7 +207,7 @@ func (h *Handler) updateUser(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"message": "用户不存在"})
 		return
 	}
-	fmt.Printf("req.Nickname: %v\n", *req.Nickname)
+
 	if len(*req.Nickname) > 3 && *req.Nickname != user.Nickname {
 		// 判断用户昵称是否重复
 		if i := h.Queries.ExistsNickname(ctx, *req.Nickname); i > 0 {

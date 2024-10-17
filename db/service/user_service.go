@@ -1,9 +1,10 @@
 package db
 
 import (
-	"Dandelion/db/models"
 	"context"
 	"time"
+
+	"Dandelion/db/model"
 )
 
 type CreateUserParams struct {
@@ -58,7 +59,7 @@ func (q *Queries) ExistsNickname(ctx context.Context, nickname string) int8 {
 	return count
 }
 
-func (q *Queries) GetUser(ctx context.Context, username string) (u models.User, err error) {
+func (q *Queries) GetUser(ctx context.Context, username string) (u model.User, err error) {
 
 	sql := `SELECT * FROM users WHERE username = $1 LIMIT 1`
 	err = q.db.GetContext(ctx, &u, sql, username)
@@ -66,7 +67,7 @@ func (q *Queries) GetUser(ctx context.Context, username string) (u models.User, 
 	return
 }
 
-func (q *Queries) UpdateUser(ctx context.Context, user models.User) error {
+func (q *Queries) UpdateUser(ctx context.Context, user model.User) error {
 
 	sql := `UPDATE users 
 			SET 
